@@ -5,6 +5,7 @@ from pathlib import Path
 
 from . import __version__
 from .config import Remote, default_config_path, load_config, save_config
+from .ssh_config import read_ssh_hosts
 from .sync import sync_remote
 
 
@@ -22,8 +23,14 @@ def _parser() -> argparse.ArgumentParser:
     remote = commands.add_parser("remote", help="管理远端")
     remote_commands = remote.add_subparsers(dest="remote_command", required=True)
     add = remote_commands.add_parser("add", help="添加或更新远端")
-    add.add_argument("name")
-    add.add_argument("target", help="SSH 目标，例如 user@example.com 或 SSH alias")
+    add.add_argument("name", nargs="?")
+    add.add_argument("target", nargs="?", help="SSH 目标，例如 user@example.com 或 SSH alias")
+    add.add_argument(
+        "--all",
+        action="store_true",
+        dest="all_from_ssh",
+        help="导入 ~/.ssh/config 中的全部具体 Host",
+    )
     add.add_argument("--port", type=int)
     add.add_argument("--identity-file")
     remote_commands.add_parser("list", help="列出远端")
@@ -68,6 +75,23 @@ def main(argv: list[str] | None = None) -> None:
 
     if args.command == "remote":
         if args.remote_command == "add":
+            if args.all_from_ssh:
+                if args.name or args.target or args.port or args.identity_file:
+                    raise SystemExit("remote add --all 不能与名称、目标、端口或身份文件同时使用")
+                ssh_config = Path.home() / ".ssh" / "config"
+                if not ssh_config.is_file():
+                    raise SystemExit(f"SSH config 不存在：{ssh_config}")
+                hosts = read_ssh_hosts(ssh_config)
+                existing = sum(host in config.remotes for host in hosts)
+                for host in hosts:
+                    if host not in config.remotes:
+                        config.remotes[host] = Remote(host, host)
+                save_config(config, args.config)
+                imported = len(hosts) - existing
+                print(f"已从 {ssh_config} 导入 {imported} 个 Host，保留 {existing} 个同名远端")
+                return
+            if not args.name or not args.target:
+                raise SystemExit("请提供 NAME TARGET，或使用 ccsync remote add --all")
             identity = str(Path(args.identity_file).expanduser()) if args.identity_file else None
             remote = Remote(args.name, args.target, args.port, identity)
             config.remotes[remote.name] = remote

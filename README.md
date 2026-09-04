@@ -52,6 +52,14 @@ ccsync init
 ccsync remote add gpu my-server
 ```
 
+也可以直接导入 `~/.ssh/config` 中的全部具体 Host：
+
+```bash
+ccsync remote add --all
+```
+
+该命令支持 SSH config 的 `Include`，跳过 `*`、`?`、`!` 等通配或否定模式，并保留 ccsync 中已有的同名远端。它只记录 Host 别名，不复制 SSH config、连接参数或私钥；后续连接仍由 OpenSSH 使用原配置完成。
+
 也可以显式指定用户、端口和私钥文件：
 
 ```bash
