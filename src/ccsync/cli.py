@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+from fnmatch import fnmatchcase
 from pathlib import Path
 
 from . import __version__
@@ -44,7 +45,7 @@ def _parser() -> argparse.ArgumentParser:
 
     for name, help_text in (("status", "预览同步"), ("sync", "执行同步")):
         command = commands.add_parser(name, help=help_text)
-        command.add_argument("remote", nargs="?")
+        command.add_argument("remote", nargs="?", help="远端名称或带引号的通配模式")
         command.add_argument("--all", action="store_true", help="处理所有远端")
         command.add_argument("--with-history", action="store_true", help="包含全部聊天历史")
         command.add_argument("--jobs", type=_positive_int, default=4, help="并发远端数，默认 4")
@@ -61,9 +62,10 @@ def _selected_remotes(config, name: str | None, all_remotes: bool) -> list[Remot
             raise SystemExit("尚未配置远端；请先运行 ccsync remote add")
         return list(config.remotes.values())
     if name:
-        if name not in config.remotes:
+        matched = [remote for remote_name, remote in config.remotes.items() if fnmatchcase(remote_name, name)]
+        if not matched:
             raise SystemExit(f"未知远端：{name}")
-        return [config.remotes[name]]
+        return matched
     if len(config.remotes) == 1:
         return list(config.remotes.values())
     raise SystemExit("请指定远端名称，或使用 --all")

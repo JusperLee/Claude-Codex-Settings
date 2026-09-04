@@ -82,10 +82,12 @@ def build_filters(paths: list[str] | tuple[str, ...]) -> list[str]:
 
 def _run(command: list[str], context: _SyncContext, step: str) -> bool:
     print(f"[{context.remote.name}] $ {shlex.join(command)}")
-    result = subprocess.run(command, check=False)
+    result = subprocess.run(command, check=False, text=True, stderr=subprocess.PIPE)
     if result.returncode:
+        lines = [line.strip() for line in result.stderr.splitlines() if line.strip()]
+        message = " | ".join(lines[-3:]) or f"{command[0]} returned {result.returncode}"
         context.report.failures.append(
-            SyncFailure(step, result.returncode, f"{command[0]} returned {result.returncode}")
+            SyncFailure(step, result.returncode, message)
         )
         return False
     return True
@@ -216,7 +218,7 @@ def _merged_special_content(
 
 
 def _fetch_special(context: _SyncContext) -> bool:
-    options = ["-az", "--relative", "--prune-empty-dirs", *build_filters(SPECIAL_PATHS)]
+    options = ["-az", "--prune-empty-dirs", *build_filters(SPECIAL_PATHS)]
     context.special_ready = _run(
         rsync_command(
             context.remote,
@@ -305,7 +307,6 @@ def _upload_special(context: _SyncContext) -> bool:
     options = [
         "-az",
         "--ignore-times",
-        "--relative",
         "--prune-empty-dirs",
         *build_filters(SPECIAL_PATHS),
         *_backup_options(remote_backup),
@@ -370,8 +371,10 @@ def _prepare_remote(context: _SyncContext) -> None:
 def _status_remote(context: _SyncContext) -> None:
     _fetch_special(context)
     _show_special_status(context)
-    _pull_regular(context, dry_run=True)
-    _push_regular(context, dry_run=True)
+    if _pull_regular(context, dry_run=True):
+        _push_regular(context, dry_run=True)
+    else:
+        print(f"[{context.remote.name}] skipped push preview: pull preview did not complete")
     _bootstrap_credentials(context, dry_run=True)
 
 

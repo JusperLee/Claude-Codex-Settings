@@ -88,6 +88,13 @@ ccsync status --all --jobs 8
 ccsync sync --all --jobs 8
 ```
 
+远端名称支持 shell 风格匹配。请给模式加引号，避免 zsh 在 ccsync 启动前展开 `*`：
+
+```bash
+ccsync status 'img*'
+ccsync sync 'img*' --jobs 4
+```
+
 为防止多台远端同时覆盖本机文件，实际同步会并发准备远端、依次合并到本机，再并发推送。某台远端失败只记录错误，其他远端继续；结束时统一显示成功与失败数量。存在失败时最终退出码为 `1`，便于脚本和定时任务识别。
 
 包含全部持久化聊天记录：
@@ -174,6 +181,16 @@ Claude Code：
 第二个路径位于远端服务器。恢复时，在确认目标文件没有被 Codex/Claude Code 使用后，从对应备份目录复制回来即可。备份不会自动删除。
 
 为了减少运行中写入导致的不完整历史，建议在使用 `--with-history` 前退出两端正在运行的 Codex/Claude Code 会话。
+
+## 常见错误
+
+汇总会附带 rsync/SSH 的最后几行 stderr。常见退出码：
+
+- `255`：SSH 无法连接、认证失败、跳板机不可用或 Host 配置有误。
+- `127`：远端找不到 `rsync`，需要在该服务器安装并确保它位于非交互 shell 的 PATH 中。
+- `1`：rsync 参数、权限或文件传输错误，应以汇总中的 stderr 为准。
+
+macOS 自带 openrsync 与较新远端 rsync 配合时，`--relative` 和 `host:~/` 可能导致 `poll: hangup on receiver`。ccsync `0.3.1` 已避免这个组合。
 
 ## 开发验证
 
