@@ -1,7 +1,8 @@
 import unittest
+from unittest.mock import patch
 
-from ccsync.config import Remote
-from ccsync.sync import build_filters, rsync_command, ssh_command
+from ccsync.config import AppConfig, Remote
+from ccsync.sync import build_filters, rsync_command, ssh_command, sync_remotes
 
 
 class SyncCommandTest(unittest.TestCase):
@@ -18,6 +19,23 @@ class SyncCommandTest(unittest.TestCase):
         command = rsync_command(remote, ["-a", "--ignore-existing"], "local", "alice@gpu.example:~/remote")
         self.assertIn("--ignore-existing", command)
         self.assertIn("ssh -p 2222 -i '/tmp/test key'", command)
+
+    def test_batch_collects_failure_without_stopping_other_remotes(self):
+        remotes = [Remote("bad", "bad-host"), Remote("good", "good-host")]
+        visited = []
+
+        def status(context):
+            visited.append(context.remote.name)
+            if context.remote.name == "bad":
+                raise RuntimeError("unavailable")
+
+        with patch("ccsync.sync._status_remote", side_effect=status):
+            reports = sync_remotes(AppConfig(), remotes, dry_run=True, jobs=2)
+
+        by_name = {report.remote: report for report in reports}
+        self.assertCountEqual(visited, ["bad", "good"])
+        self.assertFalse(by_name["bad"].ok)
+        self.assertTrue(by_name["good"].ok)
 
 
 if __name__ == "__main__":

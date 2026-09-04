@@ -6,7 +6,14 @@ from pathlib import Path
 from . import __version__
 from .config import Remote, default_config_path, load_config, save_config
 from .ssh_config import read_ssh_hosts
-from .sync import sync_remote
+from .sync import SyncReport, sync_remotes
+
+
+def _positive_int(value: str) -> int:
+    number = int(value)
+    if number < 1:
+        raise argparse.ArgumentTypeError("必须大于 0")
+    return number
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -40,6 +47,7 @@ def _parser() -> argparse.ArgumentParser:
         command.add_argument("remote", nargs="?")
         command.add_argument("--all", action="store_true", help="处理所有远端")
         command.add_argument("--with-history", action="store_true", help="包含全部聊天历史")
+        command.add_argument("--jobs", type=_positive_int, default=4, help="并发远端数，默认 4")
         if name == "sync":
             command.add_argument("--dry-run", action="store_true", help="仅预览")
     return parser
@@ -59,6 +67,21 @@ def _selected_remotes(config, name: str | None, all_remotes: bool) -> list[Remot
     if len(config.remotes) == 1:
         return list(config.remotes.values())
     raise SystemExit("请指定远端名称，或使用 --all")
+
+
+def _print_summary(reports: list[SyncReport]) -> bool:
+    succeeded = sum(report.ok for report in reports)
+    failed = len(reports) - succeeded
+    print(f"\n汇总：成功 {succeeded}，失败 {failed}")
+    for report in reports:
+        if report.ok:
+            print(f"  OK  {report.remote}")
+            continue
+        print(f"  ERR {report.remote} ({len(report.failures)} 项)")
+        for failure in report.failures:
+            code = f"exit={failure.return_code}" if failure.return_code is not None else "internal"
+            print(f"      {failure.step}: {code}, {failure.message}")
+    return failed > 0
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -109,8 +132,15 @@ def main(argv: list[str] | None = None) -> None:
 
     remotes = _selected_remotes(config, args.remote, args.all)
     dry_run = args.command == "status" or args.dry_run
-    for remote in remotes:
-        sync_remote(config, remote, with_history=args.with_history, dry_run=dry_run)
+    reports = sync_remotes(
+        config,
+        remotes,
+        with_history=args.with_history,
+        dry_run=dry_run,
+        jobs=args.jobs,
+    )
+    if _print_summary(reports):
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":
